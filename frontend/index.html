@@ -36,6 +36,11 @@
 
 <button onclick="updateProfile()">Обновить профиль</button>
 
+<h2>Мои чаты</h2>
+<div id="chatList"></div>
+<hr>
+<div id="chatWindow"></div>
+
 <h2>Чат</h2>
 <input id="chatUserId" placeholder="ID собеседника">
 <button onclick="loadChat()">Открыть чат</button><br>
@@ -59,6 +64,7 @@ async function register() {
   let data = await res.json();
   document.getElementById('regMsg').innerText = data.message || data.error;
 }
+
 
 async function login() {
   let email = document.getElementById('logEmail').value;

@@ -110,6 +110,45 @@ app.get('/profile', (req, res) => {
   }
 });
 
+// ======= Список чатов пользователя =======
+app.get('/chats', (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const { id } = jwt.verify(token, SECRET);
+
+    db.all(`
+      SELECT u.id as user_id, u.nickname, u.avatar, u.email, u.show_email,
+             m.text as last_message, m.created_at
+      FROM users u
+      JOIN (
+        SELECT
+          CASE 
+            WHEN sender_id = ? THEN receiver_id
+            ELSE sender_id
+          END as other_id,
+          MAX(created_at) as last_time
+        FROM messages
+        WHERE sender_id = ? OR receiver_id = ?
+        GROUP BY other_id
+      ) last_chats
+      ON u.id = last_chats.other_id
+      LEFT JOIN messages m
+      ON (
+        (m.sender_id = ? AND m.receiver_id = u.id)
+        OR (m.sender_id = u.id AND m.receiver_id = ?)
+      ) AND m.created_at = last_chats.last_time
+      ORDER BY m.created_at DESC
+    `, [id, id, id, id, id], (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Ошибка сервера' });
+      res.json(rows);
+    });
+
+  } catch {
+    res.status(401).json({ error: 'Не авторизован' });
+  }
+});
+
+
 app.put('/profile', upload.single('avatar'), (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
