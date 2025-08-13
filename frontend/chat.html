@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chat</title>
+  <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;max-width:720px;margin:20px auto}
+    #messages{border:1px solid #ddd;border-radius:8px;height:360px;overflow:auto;padding:10px;background:#fafafa}
+    .row{display:flex;gap:8px;margin:8px 0}
+    .msg{max-width:70%;padding:8px 10px;border-radius:10px}
+    .me{align-self:flex-end;background:#dff3ff}
+    .other{align-self:flex-start;background:#fff}
+    .meta{font-size:12px;opacity:.6;margin-top:2px}
+    #topbar{display:flex;gap:8px;margin:10px 0}
+    input,button{padding:8px}
+  </style>
+</head>
+<body>
+  <h2>Чат</h2>
+
+  <div id="topbar">
+    <input id="receiver" placeholder="ID получателя" style="width:180px">
+    <button id="openBtn">Открыть чат</button>
+    <button id="logoutBtn">Выйти</button>
+  </div>
+
+  <div id="messages"></div>
+
+  <div class="row">
+    <input id="msg" placeholder="Сообщение" style="flex:1">
+    <button id="sendBtn">Отправить</button>
+  </div>
+
+  <script>
+    const API = 'http://localhost:3000';
+    const token = localStorage.getItem('token');
+    const myId = localStorage.getItem('userId');
+
+    if (!token || !myId) location.href = 'index.html';
+
+    // --- UI refs
+    const messagesEl = document.getElementById('messages');
+    const receiverInput = document.getElementById('receiver');
+    const msgInput = document.getElementById('msg');
+    const openBtn = document.getElementById('openBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+
+    // --- Socket
+    const socket = io(API);
+    socket.emit('join', myId);
+
+    socket.on('receive_message', (data) => {
+      // показываем входящее только если это текущий собеседник
+      const current = getCurrentCompanion();
+      if (!current) return;
+      const fromIsCurrent = String(data.sender_id) === String(current);
+      const toMe = String(data.receiver_id) === String(myId);
+      if (fromIsCurrent && toMe) {
+        renderMessage(data, false);
+      }
+    });
+
+    // --- helpers
+    function getCurrentCompanion() {
+      const v = receiverInput.value.trim();
+      return v ? v : null;
+    }
+
+    function renderMessage(m, isMine) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const bubble = document.createElement('div');
+      bubble.className = 'msg ' + (isMine ? 'me' : 'other');
+      bubble.innerHTML = `<div>${escapeHtml(m.text)}</div>
+                          <div class="meta">${(isMine ? 'Я' : m.sender_id)} • ${formatTs(m.created_at)}</div>`;
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function formatTs(ts) {
+      if (!ts) return new Date().toLocaleString();
+      // SQLite формат: "YYYY-MM-DD HH:MM:SS"
+      return new Date(ts.replace(' ', 'T') + 'Z').toLocaleString();
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function loadHistory(withUserId) {
+      messagesEl.innerHTML = 'Загрузка...';
+      try {
+        const res = await fetch(`${API}/messages/${withUserId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        messagesEl.innerHTML = '';
+        data.forEach(m => {
+          const mine = String(m.sender_id) === String(myId);
+          renderMessage(m, mine);
+        });
+        msgInput.focus();
+      } catch (e) {
+        messagesEl.innerHTML = 'Ошибка загрузки истории';
+      }
+    }
+
+    // --- actions
+    openBtn.onclick = () => {
+      const withId = getCurrentCompanion();
+      if (!withId) return alert('Укажи ID получателя');
+      loadHistory(withId);
+    };
+
+    sendBtn.onclick = () => {
+      const withId = getCurrentCompanion();
+      if (!withId) return alert('Сначала открой чат (введи ID получателя)');
+      const text = msgInput.value.trim();
+      if (!text) return;
+      const payload = { sender_id: myId, receiver_id: withId, text };
+      // локально показываем сразу
+      renderMessage({ ...payload, created_at: new Date().toISOString() }, true);
+      msgInput.value = '';
+      socket.emit('send_message', payload);
+    };
+
+    msgInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendBtn.onclick();
+    });
+
+    receiverInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') openBtn.onclick();
+    });
+
+    logoutBtn.onclick = () => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userId');
+      location.href = 'index.html';
+    };
+  </script>
+</body>
+</html>

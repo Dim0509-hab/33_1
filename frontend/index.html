@@ -1,0 +1,137 @@
+<!-- frontend/index.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Messenger Test</title>
+<style>
+  body { font-family: sans-serif; max-width: 600px; margin: auto; }
+  input, button { padding: 8px; margin: 4px; }
+  .chat { border: 1px solid #ccc; height: 200px; overflow-y: auto; padding: 5px; margin-top: 10px; }
+</style>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+
+<h2>Регистрация</h2>
+<input id="regEmail" placeholder="Email"><br>
+<input id="regPass" placeholder="Пароль" type="password"><br>
+<button onclick="register()">Зарегистрироваться</button>
+<p id="regMsg"></p>
+
+<h2>Вход</h2>
+<input id="logEmail" placeholder="Email"><br>
+<input id="logPass" placeholder="Пароль" type="password"><br>
+<button onclick="login()">Войти</button>
+<p id="logMsg"></p>
+
+<h2>Профиль</h2>
+<p id="profileInfo"></p>
+<input id="nickname" placeholder="Никнейм">
+<button onclick="updateProfile()">Обновить профиль</button>
+
+<h2>Чат</h2>
+<input id="chatUserId" placeholder="ID собеседника">
+<button onclick="loadChat()">Открыть чат</button><br>
+<div class="chat" id="chatBox"></div>
+<input id="chatMsg" placeholder="Сообщение">
+<button onclick="sendMsg()">Отправить</button>
+
+<script>
+let token = null;
+let userId = null;
+let socket = null;
+let currentChatUser = null;
+
+async function register() {
+  let email = document.getElementById('regEmail').value;
+  let password = document.getElementById('regPass').value;
+  let res = await fetch('http://localhost:3000/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  let data = await res.json();
+  document.getElementById('regMsg').innerText = data.message || data.error;
+}
+
+async function login() {
+  let email = document.getElementById('logEmail').value;
+  let password = document.getElementById('logPass').value;
+  let res = await fetch('http://localhost:3000/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  let data = await res.json();
+  if (data.token) {
+    token = data.token;
+    userId = data.userId;
+    document.getElementById('logMsg').innerText = 'Вход выполнен!';
+    loadProfile();
+    connectSocket();
+  } else {
+    document.getElementById('logMsg').innerText = data.error;
+  }
+}
+
+async function loadProfile() {
+  let res = await fetch('http://localhost:3000/profile', {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  let data = await res.json();
+  document.getElementById('profileInfo').innerText =
+    `Email: ${data.email}, Ник: ${data.nickname || '(не задан)'}`;
+}
+
+async function updateProfile() {
+  let nickname = document.getElementById('nickname').value;
+  let res = await fetch('http://localhost:3000/profile', {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + token },
+    body: new URLSearchParams({ nickname, show_email: 1 })
+  });
+  let data = await res.json();
+  alert(data.message || data.error);
+  loadProfile();
+}
+
+function connectSocket() {
+  socket = io('http://localhost:3000');
+  socket.emit('join', userId);
+  socket.on('receive_message', (msg) => {
+    if (msg.sender_id === currentChatUser || msg.receiver_id === currentChatUser) {
+      appendMessage(msg.sender_id, msg.text);
+    }
+  });
+}
+
+function appendMessage(senderId, text) {
+  let box = document.getElementById('chatBox');
+  box.innerHTML += `<div><b>${senderId === userId ? 'Я' : senderId}:</b> ${text}</div>`;
+  box.scrollTop = box.scrollHeight;
+}
+
+async function loadChat() {
+  currentChatUser = parseInt(document.getElementById('chatUserId').value);
+  if (!token) return alert("Сначала войдите!");
+  let res = await fetch(`http://localhost:3000/messages/${currentChatUser}`, {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  let messages = await res.json();
+  let box = document.getElementById('chatBox');
+  box.innerHTML = '';
+  messages.forEach(msg => {
+    appendMessage(msg.sender_id, msg.text);
+  });
+}
+
+function sendMsg() {
+  let text = document.getElementById('chatMsg').value;
+  if (!socket || !currentChatUser) return alert("Выберите чат!");
+  socket.emit('send_message', { sender_id: userId, receiver_id: currentChatUser, text });
+  appendMessage(userId, text);
+  document.getElementById('chatMsg').value = '';
+}
+</script>
+
+</body>
+</html>
