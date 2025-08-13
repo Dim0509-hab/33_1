@@ -116,15 +116,23 @@ app.put('/profile', upload.single('avatar'), (req, res) => {
     const { id } = jwt.verify(token, SECRET);
     const { nickname, show_email } = req.body;
     const avatar = req.file ? `/uploads/${req.file.filename}` : null;
-    db.run(
-      `UPDATE users SET nickname = ?, show_email = ?, avatar = COALESCE(?, avatar) WHERE id = ?`,
-      [nickname, show_email, avatar, id],
-      () => res.json({ message: 'Профиль обновлён' })
-    );
+
+    // Проверка уникальности nickname
+    db.get(`SELECT id FROM users WHERE nickname = ? AND id != ?`, [nickname, id], (err, row) => {
+      if (row) return res.status(400).json({ error: 'Никнейм уже занят' });
+
+      db.run(
+        `UPDATE users SET nickname = ?, show_email = ?, avatar = COALESCE(?, avatar, '/uploads/default.png') WHERE id = ?`,
+        [nickname, show_email, avatar, id],
+        () => res.json({ message: 'Профиль обновлён' })
+      );
+    });
+
   } catch {
     res.status(401).json({ error: 'Не авторизован' });
   }
 });
+
 
 // ======= Получение сообщений =======
 app.get('/messages/:withUserId', (req, res) => {

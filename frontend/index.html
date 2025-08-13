@@ -27,7 +27,13 @@
 
 <h2>Профиль</h2>
 <p id="profileInfo"></p>
-<input id="nickname" placeholder="Никнейм">
+<form id="profileForm" onsubmit="updateProfile(event)">
+  <input id="nickname" name="nickname" placeholder="Никнейм"><br>
+  <input type="file" id="avatar" name="avatar"><br>
+  <label><input type="checkbox" id="showEmail" name="show_email" checked> Показывать email</label><br>
+  <button type="submit">Сохранить профиль</button>
+</form>
+
 <button onclick="updateProfile()">Обновить профиль</button>
 
 <h2>Чат</h2>
@@ -78,21 +84,39 @@ async function loadProfile() {
     headers: { Authorization: 'Bearer ' + token }
   });
   let data = await res.json();
-  document.getElementById('profileInfo').innerText =
-    `Email: ${data.email}, Ник: ${data.nickname || '(не задан)'}`;
+  document.getElementById('profileInfo').innerHTML =
+    `<img src="http://localhost:3000${data.avatar || '/uploads/default.png'}" width="50"> 
+     Email: ${data.show_email ? data.email : '(скрыт)'} 
+     Ник: ${data.nickname || '(не задан)'}`;
+  document.getElementById('nickname').value = data.nickname || '';
+  document.getElementById('showEmail').checked = !!data.show_email;
 }
 
-async function updateProfile() {
-  let nickname = document.getElementById('nickname').value;
+async function updateProfile(event) {
+  event.preventDefault();
+  let formData = new FormData();
+  formData.append('nickname', document.getElementById('nickname').value);
+  formData.append('show_email', document.getElementById('showEmail').checked ? 1 : 0);
+
+  let avatarFile = document.getElementById('avatar').files[0];
+  if (avatarFile) {
+    formData.append('avatar', avatarFile);
+  }
+
   let res = await fetch('http://localhost:3000/profile', {
     method: 'PUT',
     headers: { Authorization: 'Bearer ' + token },
-    body: new URLSearchParams({ nickname, show_email: 1 })
+    body: formData
   });
   let data = await res.json();
-  alert(data.message || data.error);
-  loadProfile();
+  if (data.error) {
+    alert(data.error);
+  } else {
+    alert(data.message);
+    loadProfile();
+  }
 }
+
 
 function connectSocket() {
   socket = io('http://localhost:3000');
